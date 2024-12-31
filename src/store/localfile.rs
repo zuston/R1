@@ -75,6 +75,7 @@ pub struct LocalFileStore {
     min_number_of_available_disks: i32,
     runtime_manager: RuntimeManager,
     partition_locks: DashMap<String, Arc<RwLock<LockedObj>>>,
+    direct_io_enable: bool,
 }
 
 impl Persistent for LocalFileStore {}
@@ -96,6 +97,7 @@ impl LocalFileStore {
             min_number_of_available_disks: 1,
             runtime_manager,
             partition_locks: Default::default(),
+            direct_io_enable: config.direct_io_enable,
         }
     }
 
@@ -130,6 +132,7 @@ impl LocalFileStore {
             min_number_of_available_disks: localfile_config.min_number_of_available_disks,
             runtime_manager,
             partition_locks: Default::default(),
+            direct_io_enable: localfile_config.direct_io_enable,
         }
     }
 
@@ -255,8 +258,16 @@ impl LocalFileStore {
         }
 
         let shuffle_file_format = self.generate_shuffle_file_format(blocks, next_offset)?;
-        local_disk
-            .append(&data_file_path, shuffle_file_format.data)
+        let append_future = if self.direct_io_enable {
+            local_disk.direct_append(
+                &data_file_path,
+                next_offset as usize,
+                shuffle_file_format.data,
+            )
+        } else {
+            local_disk.append(&data_file_path, shuffle_file_format.data)
+        };
+        append_future
             .instrument_await(format!(
                 "data flushing with {} bytes. path: {}",
                 shuffle_file_format.len, &data_file_path
@@ -346,8 +357,12 @@ impl Store for LocalFileStore {
             ));
         }
 
-        let data = local_disk
-            .read(&data_file_path, offset, Some(len))
+        let future_read = if self.direct_io_enable {
+            local_disk.direct_read(&data_file_path, offset, len)
+        } else {
+            local_disk.read(&data_file_path, offset, Some(len))
+        };
+        let data = future_read
             .instrument_await(format!(
                 "getting data from offset:{} with expected {} bytes from localfile: {}",
                 offset, len, &data_file_path

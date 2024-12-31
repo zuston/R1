@@ -46,6 +46,7 @@ mod reject;
 pub mod semaphore_with_index;
 pub mod storage;
 
+pub mod bits;
 pub mod histogram;
 
 use crate::app::{AppManager, AppManagerRef};

@@ -63,6 +63,7 @@ mod log_service;
 #[cfg(feature = "logforth")]
 mod logforth_service;
 
+pub mod bits;
 pub mod histogram;
 mod mem_allocator;
 mod metric;

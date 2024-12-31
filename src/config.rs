@@ -118,6 +118,13 @@ pub struct LocalfileStoreConfig {
     pub disk_healthy_check_interval_sec: u64,
 
     pub io_scheduler_config: Option<IoSchedulerConfig>,
+
+    #[serde(default = "as_default_direct_io_enable")]
+    pub direct_io_enable: bool,
+}
+
+fn as_default_direct_io_enable() -> bool {
+    false
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -159,6 +166,7 @@ impl LocalfileStoreConfig {
             disk_read_buf_capacity: as_default_disk_read_buf_capacity(),
             disk_healthy_check_interval_sec: as_default_disk_healthy_check_interval_sec(),
             io_scheduler_config: None,
+            direct_io_enable: as_default_direct_io_enable(),
         }
     }
 }

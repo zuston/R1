@@ -54,6 +54,30 @@ const SPILL_BATCH_SIZE_BUCKETS: &[f64] = &[
 
 pub static REGISTRY: Lazy<Registry> = Lazy::new(Registry::new);
 
+pub static ALIGNMENT_BUFFER_POOL_READ_ACQUIRE_MISS: Lazy<IntCounter> = Lazy::new(|| {
+    IntCounter::new(
+        "alignment_buffer_pool_read_acquire_miss",
+        "alignment_buffer_pool_read_acquire_miss",
+    )
+    .expect("metric should be created")
+});
+
+pub static ALIGNMENT_BUFFER_POOL_ACQUIRED_MISS: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
+        "alignment_buffer_pool_acquired_miss",
+        "alignment_buffer_pool_acquired_miss",
+    )
+    .expect("metric should be created")
+});
+
+pub static ALIGNMENT_BUFFER_POOL_ACQUIRED_BUFFER: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
+        "alignment_buffer_pool_acquired_buffer",
+        "alignment_buffer_pool_acquired_buffer",
+    )
+    .expect("metric should be created")
+});
+
 pub static LOCALFILE_READ_MEMORY_ALLOCATION_LATENCY: Lazy<histogram::Histogram> =
     Lazy::new(|| histogram::Histogram::new("localfile_read_memory_allocation_latency"));
 
@@ -212,6 +236,26 @@ pub static LOCALFILE_DISK_READ_OPERATION_DURATION: Lazy<HistogramVec> = Lazy::ne
     let opts = histogram_opts!(
         "localfile_disk_read_operation_duration",
         "localfile disk read time",
+        Vec::from(DEFAULT_BUCKETS)
+    );
+    let opts = register_histogram_vec_with_registry!(opts, &["root"], REGISTRY).unwrap();
+    opts
+});
+
+pub static LOCALFILE_DISK_DIRECT_APPEND_OPERATION_DURATION: Lazy<HistogramVec> = Lazy::new(|| {
+    let opts = histogram_opts!(
+        "localfile_disk_direct_append_operation_duration",
+        "localfile disk direct append time",
+        Vec::from(DEFAULT_BUCKETS)
+    );
+    let opts = register_histogram_vec_with_registry!(opts, &["root"], REGISTRY).unwrap();
+    opts
+});
+
+pub static LOCALFILE_DISK_DIRECT_READ_OPERATION_DURATION: Lazy<HistogramVec> = Lazy::new(|| {
+    let opts = histogram_opts!(
+        "localfile_disk_direct_read_operation_duration",
+        "localfile disk direct read time",
         Vec::from(DEFAULT_BUCKETS)
     );
     let opts = register_histogram_vec_with_registry!(opts, &["root"], REGISTRY).unwrap();
@@ -620,6 +664,15 @@ pub static IO_SCHEDULER_APPEND_WAIT: Lazy<IntGaugeVec> =
     Lazy::new(|| register_int_gauge_vec!("append_wait", "append_wait", &["root"]).unwrap());
 
 fn register_custom_metrics() {
+    REGISTRY
+        .register(Box::new(ALIGNMENT_BUFFER_POOL_ACQUIRED_MISS.clone()))
+        .expect("");
+    REGISTRY
+        .register(Box::new(ALIGNMENT_BUFFER_POOL_ACQUIRED_BUFFER.clone()))
+        .expect("");
+    REGISTRY
+        .register(Box::new(ALIGNMENT_BUFFER_POOL_READ_ACQUIRE_MISS.clone()))
+        .expect("");
     REGISTRY
         .register(Box::new(IO_SCHEDULER_READ_PERMITS.clone()))
         .expect("");

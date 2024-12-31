@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+pub mod alignment;
 mod hadoop;
 #[cfg(feature = "hdfs")]
 pub mod hdfs;
@@ -23,7 +24,7 @@ pub mod local;
 pub mod localfile;
 pub mod mem;
 pub mod memory;
-mod spill;
+pub mod spill;
 
 use crate::app::{
     PurgeDataContext, ReadingIndexViewContext, ReadingViewContext, RegisterAppContext,

@@ -40,6 +40,10 @@ impl ComposedBytes {
         self.composed.iter()
     }
 
+    pub fn to_vec(self) -> Vec<Bytes> {
+        self.composed
+    }
+
     pub fn len(&self) -> usize {
         self.total_len
     }

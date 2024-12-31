@@ -25,7 +25,6 @@ pub mod async_io;
 pub mod delegator;
 mod scheduler;
 pub mod sync_io;
-
 pub struct FileStat {
     pub content_length: u64,
 }
@@ -43,6 +42,15 @@ pub trait LocalIO: Clone {
     async fn delete(&self, path: &str) -> Result<(), WorkerError>;
     async fn write(&self, path: &str, data: Bytes) -> Result<(), WorkerError>;
     async fn file_stat(&self, path: &str) -> Result<FileStat, WorkerError>;
+
+    async fn direct_append(
+        &self,
+        path: &str,
+        written_bytes: usize,
+        data: BytesWrapper,
+    ) -> Result<(), WorkerError>;
+    async fn direct_read(&self, path: &str, offset: i64, length: i64)
+        -> Result<Bytes, WorkerError>;
 }
 
 pub trait LocalDiskStorage: LocalIO {

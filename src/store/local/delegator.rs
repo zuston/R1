@@ -4,7 +4,8 @@ use crate::error::WorkerError;
 use crate::metric::{
     GAUGE_LOCAL_DISK_CAPACITY, GAUGE_LOCAL_DISK_IS_HEALTHY, GAUGE_LOCAL_DISK_USED,
     GAUGE_LOCAL_DISK_USED_RATIO, LOCALFILE_DISK_APPEND_OPERATION_DURATION,
-    LOCALFILE_DISK_DELETE_OPERATION_DURATION, LOCALFILE_DISK_READ_OPERATION_DURATION,
+    LOCALFILE_DISK_DELETE_OPERATION_DURATION, LOCALFILE_DISK_DIRECT_APPEND_OPERATION_DURATION,
+    LOCALFILE_DISK_DIRECT_READ_OPERATION_DURATION, LOCALFILE_DISK_READ_OPERATION_DURATION,
     TOTAL_LOCAL_DISK_APPEND_OPERATION_BYTES_COUNTER, TOTAL_LOCAL_DISK_APPEND_OPERATION_COUNTER,
     TOTAL_LOCAL_DISK_READ_OPERATION_BYTES_COUNTER, TOTAL_LOCAL_DISK_READ_OPERATION_COUNTER,
 };
@@ -253,9 +254,6 @@ impl LocalIO for LocalDiskDelegator {
     }
 
     async fn append(&self, path: &str, data: BytesWrapper) -> Result<(), WorkerError> {
-        let len = data.len();
-        let _permit = self.inner.io_scheduler.acquire(IoType::APPEND, len).await?;
-
         let timer = LOCALFILE_DISK_APPEND_OPERATION_DURATION
             .with_label_values(&[&self.inner.root])
             .start_timer();
@@ -282,12 +280,6 @@ impl LocalIO for LocalDiskDelegator {
         offset: i64,
         length: Option<i64>,
     ) -> Result<Bytes, WorkerError> {
-        let _permit = self
-            .inner
-            .io_scheduler
-            .acquire(IoType::READ, 14 * 1024 * 1024)
-            .await?;
-
         let timer = LOCALFILE_DISK_READ_OPERATION_DURATION
             .with_label_values(&[&self.inner.root])
             .start_timer();
@@ -336,6 +328,64 @@ impl LocalIO for LocalDiskDelegator {
             .instrument_await(format!("state disk: {}", &self.inner.root))
             .await??;
         Ok(file_stat)
+    }
+
+    async fn direct_append(
+        &self,
+        path: &str,
+        written_bytes: usize,
+        data: BytesWrapper,
+    ) -> Result<(), WorkerError> {
+        let len = data.len();
+        let _permit = self
+            .inner
+            .io_scheduler
+            .acquire(IoType::APPEND, len)
+            .instrument_await("io scheduler append waiting...")
+            .await?;
+        let timer = LOCALFILE_DISK_DIRECT_APPEND_OPERATION_DURATION
+            .with_label_values(&[&self.inner.root])
+            .start_timer();
+        self.inner
+            .io_handler
+            .direct_append(path, written_bytes, data)
+            .await?;
+        TOTAL_LOCAL_DISK_APPEND_OPERATION_BYTES_COUNTER
+            .with_label_values(&[&self.inner.root])
+            .inc_by(len as u64);
+        TOTAL_LOCAL_DISK_APPEND_OPERATION_COUNTER
+            .with_label_values(&[&self.inner.root])
+            .inc();
+        Ok(())
+    }
+
+    async fn direct_read(
+        &self,
+        path: &str,
+        offset: i64,
+        length: i64,
+    ) -> Result<Bytes, WorkerError> {
+        let _permit = self
+            .inner
+            .io_scheduler
+            .acquire(IoType::READ, 14 * 1024 * 1024)
+            .instrument_await("io scheduler read waiting...")
+            .await?;
+        let timer = LOCALFILE_DISK_DIRECT_READ_OPERATION_DURATION
+            .with_label_values(&[&self.inner.root])
+            .start_timer();
+        let data = self
+            .inner
+            .io_handler
+            .direct_read(path, offset, length)
+            .await?;
+        TOTAL_LOCAL_DISK_READ_OPERATION_BYTES_COUNTER
+            .with_label_values(&[&self.inner.root])
+            .inc_by(data.len() as u64);
+        TOTAL_LOCAL_DISK_READ_OPERATION_COUNTER
+            .with_label_values(&[&self.inner.root])
+            .inc();
+        Ok(data)
     }
 }
 
