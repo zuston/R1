@@ -2,7 +2,9 @@ Another high-performance implementation of Apache Uniffle shuffle server
 
 > Production ready, this project has been used for online shuffle storage service
 
-## Benchmark report
+<details>
+
+<summary>Benchmark report</summary>
 
 #### Environment
 
@@ -80,6 +82,8 @@ dispatch_thread_num = 10
 | uniffle(netty)(jemalloc)/ 300g        | 6.6min (1.9m/4.7m) |
 
 > tips: the riffle's urpc implements the customized tcp stream's proto, that is named with the NETTY rpc type in java side. 
+ 
+</details>
 
 ## Build
 
@@ -107,7 +111,10 @@ cargo build --features hdfs --release
 KRB5_CONFIG=/etc/krb5.conf KRB5CCNAME=/tmp/krb5cc_2002 LOG=info ./uniffle-worker
 ```
 
-## All config options
+
+<details>
+
+<summary>All config options</summary>
 
 ```toml
 store_type = "MEMORY_LOCALFILE_HDFS"
@@ -180,6 +187,8 @@ jaeger_service_name = "my_service"
 [health_service_config]
 alive_app_number_max_limit = 100
 ```
+
+</details>
 
 ## Profiling
 
