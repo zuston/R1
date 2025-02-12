@@ -2,12 +2,40 @@ name: ReleaseBot
 
 on:
   push:
-    tags:
-      - "v*.*.*"
+    branches:
+      - "arm-2"
 
 jobs:
+  linux-aarch64:
+    name: aarch64
+    runs-on: ubuntu-22.04-arm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: prompt/actions-commit-hash@v3
+        id: commit
+#
+#      - uses: ScribeMD/rootless-docker@0.2.2
+#        if: steps.cache.outputs.cache-hit != 'true'
+#
+#      - uses: ScribeMD/docker-cache@0.5.0
+#        if: steps.cache.outputs.cache-hit != 'true'
+#        with:
+#          key: docker-centos7-${{ hashFiles('dev/centos7/aarch64/Dockerfile') }}
+
+      - name: Build
+        run: |
+          docker compose -f dev/centos7/aarch64/docker-compose.yml up
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: uniffle-worker-linux-aarch64
+          path: target-docker/release/uniffle-worker
+
   linux-x86_64:
-    name: Build Snapshot
+    name: x86_64
     runs-on: ubuntu-22.04
 
     steps:
@@ -22,12 +50,11 @@ jobs:
       - uses: ScribeMD/docker-cache@0.5.0
         if: steps.cache.outputs.cache-hit != 'true'
         with:
-          key: docker-centos7-${{ hashFiles('dev/centos7/Dockerfile') }}
+          key: docker-centos7-${{ hashFiles('dev/centos7/x86_64/Dockerfile') }}
 
       - name: Build
         run: |
-          sed -i 's/docker-compose -f/docker compose -f/g' ./release.sh
-          ./release.sh
+          docker compose -f dev/centos7/x86_64/docker-compose.yml up
 
       - name: Upload
         uses: actions/upload-artifact@v4
