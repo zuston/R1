@@ -715,7 +715,23 @@ pub static IO_SCHEDULER_READ_WAIT: Lazy<IntGaugeVec> =
 pub static IO_SCHEDULER_APPEND_WAIT: Lazy<IntGaugeVec> =
     Lazy::new(|| register_int_gauge_vec!("append_wait", "append_wait", &["root"]).unwrap());
 
+pub static LABEL_TAGS: Lazy<IntGaugeVec> = Lazy::new(|| {
+    register_int_gauge_vec!(
+        "LABEL_TAGS",
+        "label tags to indicate the server info",
+        &["version"]
+    )
+    .unwrap()
+});
+
 fn register_custom_metrics() {
+    REGISTRY
+        .register(Box::new(LABEL_TAGS.clone()))
+        .expect("label tags");
+    LABEL_TAGS
+        .with_label_values(&[env!("CARGO_PKG_VERSION")])
+        .inc();
+
     REGISTRY
         .register(Box::new(RESIDENT_BYTES.clone()))
         .expect("resident_bytes must be registered");
