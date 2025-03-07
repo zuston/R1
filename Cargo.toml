@@ -171,6 +171,7 @@ prost-build = "0.12.1"
 [dev-dependencies]
 env_logger = "0.10.0"
 awaitility = "0.3.1"
+ntest_timeout = "0.9.3"
 
 [profile.dev]
 # re-enable debug assertions when pprof-rs fixed the reports for misaligned pointer dereferences

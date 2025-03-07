@@ -163,6 +163,13 @@ pub struct IoSchedulerConfig {
     pub read_buffer_ratio: f64,
     pub append_buffer_ratio: f64,
     pub shared_buffer_ratio: f64,
+
+    #[serde(default = "as_acquire_timeout_sec")]
+    pub acquire_timeout_sec: usize,
+}
+
+fn as_acquire_timeout_sec() -> usize {
+    60
 }
 
 fn as_default_disk_healthy_check_interval_sec() -> u64 {

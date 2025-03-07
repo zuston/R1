@@ -77,7 +77,7 @@ impl LocalDiskDelegator {
         );
 
         let io_scheduler = match &config.io_scheduler_config {
-            Some(conf) => Some(IoScheduler::new(root, &Some(conf.clone()))),
+            Some(conf) => Some(IoScheduler::new(root, conf)),
             _ => None,
         };
 

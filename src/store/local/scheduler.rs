@@ -9,7 +9,10 @@ use await_tree::InstrumentAwait;
 use log::{info, warn};
 use prometheus::IntGaugeVec;
 use std::cmp::{max, min};
+use std::time::Duration;
 use tokio::sync::{AcquireError, Semaphore, SemaphorePermit};
+use tokio::time::error::Elapsed;
+use tokio::time::timeout;
 
 pub struct IoScheduler {
     bandwidth: usize,
@@ -23,6 +26,8 @@ pub struct IoScheduler {
     shared_total_permits: usize,
 
     root: String,
+
+    acquire_wait_timeout_sec: usize,
 }
 
 #[derive(Debug, strum_macros::Display)]
@@ -32,13 +37,13 @@ pub enum IoType {
 }
 
 pub struct IoPermit<'a> {
-    internal: SemaphorePermit<'a>,
+    internal: Option<SemaphorePermit<'a>>,
     metric: IntGaugeVec,
     root: &'a str,
 }
 
 impl<'a> IoPermit<'a> {
-    pub fn new(root: &'a str, permit: SemaphorePermit<'a>, metric: IntGaugeVec) -> Self {
+    pub fn new(root: &'a str, permit: Option<SemaphorePermit<'a>>, metric: IntGaugeVec) -> Self {
         metric.with_label_values(&[root]).inc();
         Self {
             internal: permit,
@@ -55,25 +60,22 @@ impl<'a> Drop for IoPermit<'a> {
 }
 
 impl IoScheduler {
-    pub fn new(root: &str, io_scheduler_config: &Option<IoSchedulerConfig>) -> IoScheduler {
-        let (bandwidth, read_ratio, append_ratio, shared_ratio) = match io_scheduler_config {
-            Some(io_scheduler) => {
-                let bandwidth = match &io_scheduler.disk_bandwidth {
-                    Some(bandwidth) => util::parse_raw_to_bytesize(bandwidth) as usize,
-                    _ => {
-                        let disk_stat = DiskExplorer::detect(root);
-                        disk_stat.bandwidth
-                    }
-                };
+    pub fn new(root: &str, io_scheduler_config: &IoSchedulerConfig) -> IoScheduler {
+        let (bandwidth, read_ratio, append_ratio, shared_ratio) = {
+            let bandwidth = match &io_scheduler_config.disk_bandwidth {
+                Some(bandwidth) => util::parse_raw_to_bytesize(bandwidth) as usize,
+                _ => {
+                    let disk_stat = DiskExplorer::detect(root);
+                    disk_stat.bandwidth
+                }
+            };
 
-                (
-                    bandwidth,
-                    io_scheduler.read_buffer_ratio,
-                    io_scheduler.append_buffer_ratio,
-                    io_scheduler.shared_buffer_ratio,
-                )
-            }
-            _ => (1024 * 1024 * 1024, 0.5, 0.5, 0.5),
+            (
+                bandwidth,
+                io_scheduler_config.read_buffer_ratio,
+                io_scheduler_config.append_buffer_ratio,
+                io_scheduler_config.shared_buffer_ratio,
+            )
         };
 
         info!("Initialized io scheduler with disk bandwidth {} of disk: {}. read: {}, append: {}, shared: {}",
@@ -97,6 +99,7 @@ impl IoScheduler {
             append_total_permits,
             shared_total_permits,
             root: root.to_owned(),
+            acquire_wait_timeout_sec: io_scheduler_config.acquire_timeout_sec,
         }
     }
 
@@ -156,16 +159,34 @@ impl IoScheduler {
 
         // todo: wait_metric should be inc+dec by drop trait
         wait_metric.with_label_values(&[&self.root]).inc();
-        let permit = buffer
-            .acquire_many(request_permits as u32)
-            .instrument_await(format!(
-                "{} buffer wait (require:{}, available:{}) in io scheduler: {}",
-                buffer_type,
-                request_permits,
-                buffer.available_permits(),
-                &self.root
-            ))
-            .await?;
+        let permit_future = buffer.acquire_many(request_permits as u32);
+        let msg = format!(
+            "{} buffer wait (require:{}, available:{}) in io scheduler: {}",
+            buffer_type,
+            request_permits,
+            buffer.available_permits(),
+            &self.root
+        );
+        let permit = match timeout(
+            Duration::from_secs(self.acquire_wait_timeout_sec as u64),
+            permit_future,
+        )
+        .instrument_await(msg)
+        .await
+        {
+            Ok(x) => {
+                let permit = x?;
+                Some(permit)
+            }
+            Err(_) => {
+                warn!(
+                    "Timeout waiting for permit with (require/available: {}/{}) Pass it!",
+                    request_permits,
+                    buffer.available_permits()
+                );
+                None
+            }
+        };
         wait_metric.with_label_values(&[&self.root]).dec();
 
         Ok(IoPermit::new(&self.root, permit, permit_metric))
@@ -177,47 +198,73 @@ mod tests {
     use crate::config::IoSchedulerConfig;
     use crate::store::local::scheduler::{IoScheduler, IoType};
     use anyhow::Result;
+    use ntest_timeout::timeout;
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
 
     #[tokio::test]
     async fn test_exceed_permits() -> Result<()> {
         let scheduler = IoScheduler::new(
             "/tmp",
-            &Some(IoSchedulerConfig {
+            &IoSchedulerConfig {
                 disk_bandwidth: Some("10B".to_owned()),
                 read_buffer_ratio: 0.4,
                 append_buffer_ratio: 0.4,
                 shared_buffer_ratio: 0.8,
-            }),
+                acquire_timeout_sec: 60,
+            },
         );
 
         // case1: exceeding all buffer capacity, use the max shared capacity
         let read_permit_1 = scheduler.acquire(IoType::READ, 100).await?;
-        assert_eq!(8, read_permit_1.internal.num_permits());
+        assert_eq!(8, read_permit_1.internal.as_ref().unwrap().num_permits());
         drop(read_permit_1);
 
         // case2: exceeding the read buffer capacity, use the shared capacity
         let read_permit_2 = scheduler.acquire(IoType::READ, 6).await?;
-        assert_eq!(6, read_permit_2.internal.num_permits());
+        assert_eq!(6, read_permit_2.internal.as_ref().unwrap().num_permits());
         drop(read_permit_2);
 
         // another case, that the read capacity > shared capacity
         let scheduler = IoScheduler::new(
             "/tmp",
-            &Some(IoSchedulerConfig {
+            &IoSchedulerConfig {
                 disk_bandwidth: Some("10B".to_owned()),
                 read_buffer_ratio: 0.8,
                 append_buffer_ratio: 0.4,
                 shared_buffer_ratio: 0.4,
-            }),
+                acquire_timeout_sec: 60,
+            },
         );
 
         let read_permit_1 = scheduler.acquire(IoType::READ, 100).await?;
-        assert_eq!(8, read_permit_1.internal.num_permits());
+        assert_eq!(8, read_permit_1.internal.as_ref().unwrap().num_permits());
         drop(read_permit_1);
 
         let read_permit_2 = scheduler.acquire(IoType::READ, 6).await?;
-        assert_eq!(6, read_permit_2.internal.num_permits());
+        assert_eq!(6, read_permit_2.internal.as_ref().unwrap().num_permits());
         drop(read_permit_2);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[timeout(2000)]
+    async fn test_timeout_acquire() -> Result<()> {
+        let scheduler = IoScheduler::new(
+            "/tmp",
+            &IoSchedulerConfig {
+                disk_bandwidth: Some("10B".to_owned()),
+                read_buffer_ratio: 0.5,
+                append_buffer_ratio: 0.5,
+                shared_buffer_ratio: 0.5,
+                acquire_timeout_sec: 1,
+            },
+        );
+
+        let read_permit_1 = scheduler.acquire(IoType::READ, 5).await?;
+        let read_permit_2 = scheduler.acquire(IoType::READ, 5).await?;
+        let read_permit_3 = scheduler.acquire(IoType::READ, 5).await?;
 
         Ok(())
     }
@@ -226,12 +273,13 @@ mod tests {
     async fn test_permit() -> Result<()> {
         let scheduler = IoScheduler::new(
             "/tmp",
-            &Some(IoSchedulerConfig {
+            &IoSchedulerConfig {
                 disk_bandwidth: Some("10B".to_owned()),
                 read_buffer_ratio: 0.5,
                 append_buffer_ratio: 0.5,
                 shared_buffer_ratio: 0.5,
-            }),
+                acquire_timeout_sec: 60,
+            },
         );
         let read_permit_1 = scheduler.acquire(IoType::READ, 4).await?;
         let read_permit_2 = scheduler.acquire(IoType::READ, 5).await?;

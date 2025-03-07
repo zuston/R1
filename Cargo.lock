@@ -2375,6 +2375,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ntest_timeout"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcc7c92f190c97f79b4a332f5e81dcf68c8420af2045c936c9be0bc9de6f63b5"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "nu-ansi-term"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3279,6 +3291,7 @@ dependencies = [
  "log",
  "logforth",
  "mimalloc",
+ "ntest_timeout",
  "num_enum",
  "once_cell",
  "parking_lot",
