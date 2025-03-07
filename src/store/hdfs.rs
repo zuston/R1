@@ -242,7 +242,7 @@ impl HdfsStore {
         let data_file_path = format!("{}_{}.data", &data_file_path_prefix, retry_time);
         let index_file_path = format!("{}_{}.index", &index_file_path_prefix, retry_time);
 
-        let shuffle_file_format = self.generate_shuffle_file_format(data_blocks, next_offset)?;
+        let shuffle_file_format = self.create_shuffle_format(data_blocks, next_offset)?;
         debug!("Writing path: {}", &data_file_path);
         match self
             .write_data_and_index(

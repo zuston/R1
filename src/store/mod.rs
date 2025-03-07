@@ -20,6 +20,7 @@ mod hadoop;
 #[cfg(feature = "hdfs")]
 pub mod hdfs;
 pub mod hybrid;
+pub mod index_codec;
 pub mod local;
 pub mod localfile;
 pub mod mem;
@@ -34,7 +35,6 @@ use crate::config::{Config, StorageType};
 use crate::error::WorkerError;
 use crate::grpc::protobuf::uniffle::{ShuffleData, ShuffleDataBlockSegment};
 use crate::store::hybrid::HybridStore;
-use std::fmt::{Display, Formatter};
 
 use crate::util::now_timestamp_as_sec;
 use anyhow::Result;
@@ -43,6 +43,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 
 use crate::composed_bytes::ComposedBytes;
 use crate::runtime::manager::RuntimeManager;
+use crate::store::index_codec::IndexCodec;
 use crate::store::spill::SpillWritingViewContext;
 use crate::store::BytesWrapper::{Composed, Direct};
 use std::sync::Arc;
@@ -250,11 +251,7 @@ pub trait Store {
 
     async fn spill_insert(&self, ctx: SpillWritingViewContext) -> Result<(), WorkerError>;
 
-    fn generate_shuffle_file_format(
-        &self,
-        blocks: Vec<&Block>,
-        offset: i64,
-    ) -> Result<ShuffleFileFormat> {
+    fn create_shuffle_format(&self, blocks: Vec<&Block>, offset: i64) -> Result<ShuffleFileFormat> {
         let mut offset = offset;
 
         let mut index_bytes_holder = BytesMut::new();
@@ -262,24 +259,14 @@ pub trait Store {
 
         let mut total_size = 0;
         for block in blocks {
-            let block_id = block.block_id;
+            let _ = IndexCodec::encode(&(block, offset).into(), &mut index_bytes_holder)?;
+
             let length = block.length;
-            let uncompress_len = block.uncompress_length;
-            let task_attempt_id = block.task_attempt_id;
-            let crc = block.crc;
-
             total_size += length as usize;
-
-            index_bytes_holder.put_i64(offset);
-            index_bytes_holder.put_i32(length);
-            index_bytes_holder.put_i32(uncompress_len);
-            index_bytes_holder.put_i64(crc);
-            index_bytes_holder.put_i64(block_id);
-            index_bytes_holder.put_i64(task_attempt_id);
+            offset += length as i64;
 
             let data = &block.data;
             data_chain.push(data.clone());
-            offset += length as i64;
         }
 
         Ok(ShuffleFileFormat {

@@ -2,7 +2,6 @@ use crate::store::Block;
 use anyhow::{anyhow, Result};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use log::warn;
-use socket2::InterfaceIndexOrAddress::Index;
 
 pub const INDEX_BLOCK_SIZE: usize = 40;
 
@@ -18,7 +17,7 @@ pub struct IndexBlock {
     pub task_attempt_id: i64,
 }
 
-impl Into<IndexBlock> for (Block, i64) {
+impl Into<IndexBlock> for (&Block, i64) {
     fn into(self) -> IndexBlock {
         let raw_block = self.0;
         IndexBlock {
@@ -33,16 +32,15 @@ impl Into<IndexBlock> for (Block, i64) {
 }
 
 impl IndexCodec {
-    pub fn encode(block: &IndexBlock) -> Result<Bytes> {
-        let mut container = BytesMut::with_capacity(INDEX_BLOCK_SIZE);
-        container.put_i64(block.offset);
-        container.put_i32(block.length);
-        container.put_i32(block.uncompress_length);
-        container.put_i64(block.crc);
-        container.put_i64(block.block_id);
-        container.put_i64(block.task_attempt_id);
+    pub fn encode(block: &IndexBlock, bytes_holder: &mut BytesMut) -> Result<()> {
+        bytes_holder.put_i64(block.offset);
+        bytes_holder.put_i32(block.length);
+        bytes_holder.put_i32(block.uncompress_length);
+        bytes_holder.put_i64(block.crc);
+        bytes_holder.put_i64(block.block_id);
+        bytes_holder.put_i64(block.task_attempt_id);
 
-        Ok(container.into())
+        Ok(())
     }
 
     pub fn decode(bytes: Bytes) -> Result<IndexBlock> {
@@ -80,8 +78,9 @@ impl IndexCodec {
 
 #[cfg(test)]
 mod tests {
-    use crate::store::local::index_codec::{IndexBlock, IndexCodec};
+    use crate::store::index_codec::{IndexBlock, IndexCodec};
     use crate::store::Block;
+    use bytes::BytesMut;
 
     #[test]
     fn test_encode_decode_index_block() -> anyhow::Result<()> {
@@ -95,10 +94,11 @@ mod tests {
         };
         let offset = 0;
 
-        let index_block: IndexBlock = (raw_block, offset).into();
-        let index_encoded_bytes = IndexCodec::encode(&index_block)?;
+        let index_block: IndexBlock = (&raw_block, offset).into();
+        let mut bytes_holder = BytesMut::new();
+        IndexCodec::encode(&index_block, &mut bytes_holder)?;
 
-        let decoded_index_block = IndexCodec::decode(index_encoded_bytes)?;
+        let decoded_index_block = IndexCodec::decode(bytes_holder.into())?;
         assert_eq!(0, decoded_index_block.task_attempt_id);
         assert_eq!(1, decoded_index_block.block_id);
         assert_eq!(0, decoded_index_block.offset);

@@ -57,7 +57,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::Instrument;
 
-use crate::store::local::index_codec::{IndexCodec, INDEX_BLOCK_SIZE};
+use crate::store::index_codec::{IndexCodec, INDEX_BLOCK_SIZE};
 use crate::store::local::{LocalDiskStorage, LocalIO, LocalfileStoreStat};
 use crate::store::spill::SpillWritingViewContext;
 use crate::util;
@@ -288,7 +288,7 @@ impl LocalFileStore {
             }
         }
 
-        let shuffle_file_format = self.generate_shuffle_file_format(blocks, next_offset)?;
+        let shuffle_file_format = self.create_shuffle_format(blocks, next_offset)?;
         let append_future = if self.direct_io_enable && self.direct_io_append_enable {
             local_disk.direct_append(
                 &data_file_path,
@@ -633,7 +633,7 @@ mod test {
     use crate::store::localfile::LocalFileStore;
 
     use crate::error::WorkerError;
-    use crate::store::local::index_codec::{IndexBlock, IndexCodec};
+    use crate::store::index_codec::{IndexBlock, IndexCodec};
     use crate::store::local::LocalDiskStorage;
     use crate::store::{Block, ResponseData, ResponseDataIndex, Store};
     use bytes::{Buf, Bytes, BytesMut};
@@ -930,15 +930,21 @@ mod test {
         let temp_path = temp_dir.path().to_str().unwrap().to_string();
         info!("init local file path: {}", temp_path);
 
-        let raw_bytes = IndexCodec::encode(&IndexBlock {
-            offset: 0,
-            length: 10,
-            uncompress_length: 0,
-            crc: 0,
-            block_id: 0,
-            task_attempt_id: 0,
-        })?;
+        let mut raw_bytes = BytesMut::new();
+        IndexCodec::encode(
+            &IndexBlock {
+                offset: 0,
+                length: 10,
+                uncompress_length: 0,
+                crc: 0,
+                block_id: 0,
+                task_attempt_id: 0,
+            },
+            &mut raw_bytes,
+        )?;
         let data_file_len = 10;
+
+        let raw_bytes = raw_bytes.freeze();
 
         // case1: legal pass
         assert_eq!(
