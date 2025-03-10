@@ -23,7 +23,7 @@ use bytes::Bytes;
 
 pub mod delegator;
 pub mod index_codec;
-mod scheduler;
+mod limiter;
 pub mod sync_io;
 
 pub struct FileStat {

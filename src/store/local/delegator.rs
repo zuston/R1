@@ -11,10 +11,11 @@ use crate::metric::{
 };
 use crate::readable_size::ReadableSize;
 use crate::runtime::manager::RuntimeManager;
-use crate::store::local::scheduler::{IoPermit, IoScheduler, IoType};
+use crate::store::local::limiter::TokenBucketLimiter;
 use crate::store::local::sync_io::SyncLocalIO;
 use crate::store::local::{DiskStat, FileStat, LocalDiskStorage, LocalIO};
 use crate::store::BytesWrapper;
+use crate::util;
 use anyhow::Result;
 use async_trait::async_trait;
 use await_tree::InstrumentAwait;
@@ -52,7 +53,7 @@ struct Inner {
     capacity_ref: OnceCell<Arc<AtomicU64>>,
     available_ref: OnceCell<Arc<AtomicU64>>,
 
-    io_scheduler: Option<IoScheduler>,
+    io_limiter: Option<TokenBucketLimiter>,
 
     io_duration_threshold_sec: u64,
 }
@@ -76,8 +77,22 @@ impl LocalDiskDelegator {
             Some(read_capacity.as_bytes() as usize),
         );
 
-        let io_scheduler = match &config.io_scheduler_config {
-            Some(conf) => Some(IoScheduler::new(root, &Some(conf.clone()))),
+        let io_limiter = match config.io_limiter.as_ref() {
+            Some(conf) => {
+                let capacity = util::parse_raw_to_bytesize(&conf.capacity) as usize;
+                let rate = util::parse_raw_to_bytesize(&conf.fill_rate_of_per_second) as usize;
+                let v = Some(TokenBucketLimiter::new(
+                    &runtime_manager,
+                    capacity,
+                    rate,
+                    Duration::from_millis(conf.refill_interval_of_milliseconds),
+                ));
+                info!(
+                    "TokenBucket limiter has been initialized for root[{}]",
+                    root
+                );
+                v
+            }
             _ => None,
         };
 
@@ -92,7 +107,7 @@ impl LocalDiskDelegator {
                 healthy_check_interval_sec: config.disk_healthy_check_interval_sec,
                 capacity_ref: Default::default(),
                 available_ref: Default::default(),
-                io_scheduler,
+                io_limiter,
                 io_duration_threshold_sec: config.io_duration_threshold_sec as u64,
             }),
         };
@@ -113,18 +128,14 @@ impl LocalDiskDelegator {
         delegator
     }
 
-    pub async fn get_permit(&self, io_type: IoType, len: usize) -> Result<Option<IoPermit<'_>>> {
-        let permit = if let Some(scheduler) = self.inner.io_scheduler.as_ref() {
-            let p = scheduler
-                .acquire(io_type, len)
-                .instrument_await("io scheduler read waiting...")
-                .await?;
-            Some(p)
-        } else {
-            None
-        };
-
-        Ok(permit)
+    pub async fn get_permit(&self, len: usize) -> Result<()> {
+        if let Some(limiter) = self.inner.io_limiter.as_ref() {
+            limiter
+                .acquire(len)
+                .instrument_await(format!("getting io limiter's permit. {}", len))
+                .await;
+        }
+        Ok(())
     }
 
     pub fn with_capacity(&self, capacity_ref: Arc<AtomicU64>) {
@@ -384,7 +395,7 @@ impl LocalIO for LocalDiskDelegator {
         data: BytesWrapper,
     ) -> Result<(), WorkerError> {
         let len = data.len();
-        let permit = self.get_permit(IoType::APPEND, len).await?;
+        self.get_permit(len).await?;
 
         let timer = LOCALFILE_DISK_DIRECT_APPEND_OPERATION_DURATION
             .with_label_values(&[&self.inner.root])
@@ -416,7 +427,7 @@ impl LocalIO for LocalDiskDelegator {
         offset: i64,
         length: i64,
     ) -> Result<Bytes, WorkerError> {
-        let permit = self.get_permit(IoType::READ, 14 * 1024 * 1024).await?;
+        self.get_permit(14 * 1024 * 1024).await?;
 
         let timer = LOCALFILE_DISK_DIRECT_READ_OPERATION_DURATION
             .with_label_values(&[&self.inner.root])
