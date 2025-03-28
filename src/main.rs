@@ -64,6 +64,7 @@ pub mod kerberos;
 
 pub mod id_layout;
 
+pub mod discovery;
 pub mod lazy_initializer;
 
 #[cfg(not(feature = "logforth"))]
