@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "master"
+      - "release-cache"
     tags:
       - "v*.*.*"
 
@@ -14,6 +15,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
 
       - uses: prompt/actions-commit-hash@v3
         id: commit
@@ -43,7 +45,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
+      - uses: Swatinem/rust-cache@v2
       - uses: prompt/actions-commit-hash@v3
         id: commit
 
@@ -80,7 +82,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
+      - uses: Swatinem/rust-cache@v2
       - uses: prompt/actions-commit-hash@v3
         id: commit
 
