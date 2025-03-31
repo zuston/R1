@@ -53,6 +53,7 @@ pub mod histogram;
 pub mod id_layout;
 pub mod lazy_initializer;
 
+mod admin;
 mod config_reconfigure;
 pub mod deadlock;
 pub mod discovery;
