@@ -1,0 +1,178 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[package]
+name = "server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "riffle-server"
+path = "src/main.rs"
+
+[features]
+#default = ["jemalloc", "allocator-analysis"]
+
+# whether to use jemalloc as the global allocator or not
+jemalloc = [
+    "dep:tikv-jemalloc-ctl",
+    "dep:tikv-jemalloc-sys",
+    "dep:tikv-jemallocator",
+    "dep:jemalloc_pprof",
+]
+
+# whether to enable memory profiling or not, once enabled, it implies using jemalloc as the global allocator
+memory-prof = ["jemalloc", "tikv-jemallocator/profiling", "allocator-analysis"]
+
+hdfs = ["dep:hdfs-native"]
+
+hdrs = ["hdfs", "dep:hdrs"]
+
+allocator-analysis = ["dep:cap"]
+
+mimalloc = ["dep:mimalloc"]
+
+logforth = ["dep:logforth"]
+
+[dependencies]
+anyhow = "1"
+tokio = { version = "1.28.2", features = ["full"] }
+tokio-rustls = "0.22"
+tokio-stream = { version = "0.1", features = ["sync", "net"] }
+tokio-util = { version = "0.6", features = ["full"] }
+toml = "0.7.4"
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tonic = { git = "https://github.com/zuston/tonic.git", branch = "zero_copy_bytes" }
+prost = "0.12.1"
+bytes = "1"
+tonic-build = { git = "https://github.com/zuston/tonic.git", branch = "zero_copy_bytes" }
+thiserror = "1"
+dashmap = "5.4.0"
+log = "0.4.17"
+env_logger = "0.10.0"
+crossbeam = "0.8.2"
+crossbeam-channel = "0.5"
+crossbeam-utils = "0.8.16"
+tempdir = "0.3.7"
+async-trait = "0.1.68"
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+async-channel = "1.8.0"
+croaring = "2.2.0"
+prometheus = { version = "0.13", features = ["process", "push"] }
+crc32fast = "1.3.2"
+fs2 = "0.4.3"
+url = "2.4.0"
+await-tree = "0.1.1"
+poem = { version = "1.3.56", features = ["rustls", "test"] }
+pprof = { version = "0.11.1", features = [
+    "flamegraph",
+    "protobuf-codec",
+    "protobuf",
+] }
+tempfile = "3.7.0"
+once_cell = "1.18.0"
+tower = { version = "0.4", features = ["util", "load-shed"] }
+hyper = "0.14"
+tokio-console = "0.1.8"
+pin-project-lite = "0.2.8"
+signal-hook = "0.3.17"
+clap = { version = "4.5.31", features = ["derive"] }
+socket2 = { version = "0.4", features = ["all"] }
+spin = "0.9.8"
+hashlink = "0.9.1"
+rand = "0.8.5"
+#fastrace = { version = "0.6", features = ["enable"] }
+fastrace = { version = "0.6" }
+fastrace-jaeger = { version = "0.6" }
+fxhash = "0.2.1"
+parking_lot = { version = "0.12.3", features = ["deadlock_detection"] }
+num_enum = "0.7.0"
+core_affinity = "0.8.1"
+chrono = "0.4.38"
+strum = "0.20.0"
+strum_macros = "0.20.0"
+hdrhistogram = "7.5.4"
+libc = "0.2.169"
+allocator-api2 = "0.2"
+bytesize = { version = "1.2.0", features = ["serde"] }
+cc = "1.2.13"
+backtrace = "0.3.48"
+serde_json = "1.0.132"
+
+[dependencies.logforth]
+version = "0.19.1"
+features = ["rolling-file"]
+optional = true
+
+[dependencies.mimalloc]
+version = "0.1.39"
+optional = true
+
+[dependencies.cap]
+version = "0.1.2"
+optional = true
+
+[dependencies.hdfs-native]
+version = "0.7.0"
+optional = true
+features = ["kerberos"]
+
+[dependencies.hdrs]
+git = "https://github.com/zuston/hdrs"
+branch = "extended"
+optional = true
+
+# jemalloc related optional dependencies
+[dependencies.tikv-jemalloc-ctl]
+version = "0.6.0"
+optional = true
+features = ["use_std"]
+
+[dependencies.tikv-jemalloc-sys]
+version = "0.6.0"
+optional = true
+features = ["stats", "profiling", "unprefixed_malloc_on_supported_platforms"]
+
+[dependencies.tikv-jemallocator]
+version = "0.6.0"
+optional = true
+features = ["profiling", "unprefixed_malloc_on_supported_platforms"]
+
+# todo: When https://github.com/polarsignals/rust-jemalloc-pprof/pull/22 is merged, using the official repo
+[dependencies.jemalloc_pprof]
+version = "0.7.0"
+features = ["symbolize", "flamegraph"]
+optional = true
+
+[build-dependencies]
+tonic-build = { git = "https://github.com/zuston/tonic.git", branch = "zero_copy_bytes" }
+prost-build = "0.12.1"
+
+[dev-dependencies]
+env_logger = "0.10.0"
+awaitility = "0.3.1"
+
+[profile.dev]
+# re-enable debug assertions when pprof-rs fixed the reports for misaligned pointer dereferences
+#   https://github.com/rust-lang/rust/pull/98112/
+debug-assertions = false
